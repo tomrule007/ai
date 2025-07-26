@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sunblock Hero: Beach Edition</title>
+    <!-- Tailwind CSS for basic UI elements -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom CSS for the game canvas and specific elements */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #87ceeb; /* Light blue sky background (overall page) */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden; /* Prevent scrolling */
+            cursor: default; /* Default cursor */
+        }
+
+        body.sunblock-cursor {
+            /* Custom cursor: sunblock bottle (inline SVG for reliability) */
+            /* Hotspot (24 24) is roughly the center for a 48x48 icon */
+            cursor: url('data:image/svg+xml;utf8,<svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="12" height="12" rx="2" fill="%23FFFFFF"/><path d="M12 2L12 6M10 4L14 4" stroke="%23000000" stroke-width="2" stroke-linecap="round"/><path d="M9 10C9 9 10 8 12 8C14 8 15 9 15 10V15C15 16 14 17 12 17C10 17 9 16 9 15V10Z" fill="%23ADD8E6" stroke="%23000000" stroke-width="1.5"/><circle cx="12" cy="12" r="2" fill="%23FFC0CB"/></svg>') 24 24, auto;
+        }
+
+
+        #game-container {
+            /* Background will be set dynamically by JavaScript */
+            background-color: transparent; /* Ensure no default background */
+            border-radius: 1rem; /* Rounded corners */
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5); /* Deep shadow */
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem; /* Space between flex items */
+            max-width: 90vw; /* Responsive width */
+            max-height: 98vh; /* Limit container height to almost viewport height */
+            /* Re-added overflow-y: auto; temporarily to prevent cutting off content while fixing layout */
+            overflow-y: auto;
+            transition: background-image 0.1s ease-out; /* Smooth transition for background changes on resize */
+        }
+
+        canvas {
+            background-color: transparent; /* Make canvas transparent to show container background */
+            border-radius: 0.5rem;
+            display: block;
+            touch-action: none; /* Disable touch actions like scrolling/zooming */
+        }
+
+        #score-display {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #f7b731; /* Sunny yellow for score */
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        #miss-display {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #ff6b6b; /* Sunburn red for misses */
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+        }
+
+        #message-display {
+            position: absolute; /* Position over the canvas */
+            font-size: 3rem;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.7);
+            pointer-events: none; /* Allow clicks to pass through */
+            opacity: 0; /* Hidden by default */
+            transition: opacity 0.2s ease-out;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+        }
+
+        .game-button {
+            @apply px-6 py-3 rounded-full font-bold text-lg transition-all duration-200 ease-in-out;
+            background-image: linear-gradient(to right, #63b3ed, #4299e1); /* Blue gradient */
+            color: white;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border: none;
+            cursor: pointer;
+            margin-top: 1rem; /* Added margin to separate from canvas */
+        }
+        .game-button:hover {
+            background-image: linear-gradient(to right, #4299e1, #3182ce);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.4);
+        }
+        .game-button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        #gemini-insight-button {
+            @apply mt-2 px-6 py-3 rounded-full font-bold text-lg transition-all duration-200 ease-in-out;
+            background-image: linear-gradient(to right, #a78bfa, #8b5cf6); /* Purple gradient */
+            color: white;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border: none;
+            cursor: pointer;
+            display: none; /* Hidden by default */
+            margin-top: 0.5rem; /* Small margin between buttons */
+        }
+        #gemini-insight-button:hover {
+            background-image: linear-gradient(to right, #8b5cf6, #7c3aed);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.4);
+        }
+        #gemini-insight-button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            #game-container {
+                padding: 1rem;
+                gap: 0.75rem;
+            }
+            #score-display {
+                font-size: 2rem;
+            }
+            #miss-display {
+                font-size: 1.2rem;
+            }
+            #message-display {
+                font-size: 2.5rem;
+            }
+            .game-button, #gemini-insight-button {
+                padding: 0.75rem 1.5rem;
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container" class="relative">
+        <h1 class="text-4xl font-extrabold text-white mb-4">Sunblock Hero: Beach Edition</h1>
+        <div class="flex justify-between w-full px-4">
+            <div id="score-display">Score: 0</div>
+            <div id="miss-display">Sunburns: 0 / 20</div>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+        <div id="message-display"></div>
+        <button id="startButton" class="game-button">Go to the Beach!</button>
+        <button id="gemini-insight-button" class="game-button">✨ Get Beach Report ✨</button>
+    </div>
+
+    <script>
+        // Get canvas and its 2D rendering context
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameContainer = document.getElementById('game-container'); // Get the container
+        const bodyElement = document.body; // Get the body element for cursor changes
+
+        // Get UI elements
+        const scoreDisplay = document.getElementById('score-display');
+        const missDisplay = document.getElementById('miss-display');
+        const messageDisplay = document.getElementById('message-display');
+        const startButton = document.getElementById('startButton');
+        const geminiInsightButton = document.getElementById('gemini-insight-button');
+
+        // Game configuration constants
+        const LANE_COUNT = 4; // Number of lanes
+        const NOTE_SIZE = 60; // Size of each note (kid character - increased for body)
+        const NOTE_SPEED = 5; // Pixels per frame notes move down
+        const HIT_ZONE_HEIGHT = 20; // Height of the hit detection zone
+        const NOTE_SPAWN_INTERVAL = 600; // Milliseconds between note spawns
+        const MESSAGE_FADE_SPEED = 0.02; // How fast the message fades out
+        const MISS_LIMIT = 20; // Max allowed misses before game over
+        const HIT_ZONE_FLASH_FADE_SPEED = 0.05; // How fast the hit zone flash fades
+        const PERFECT_HIT_TOLERANCE = 10; // Pixels around the center of the hit zone for a perfect hit
+
+        // Constants for hit zone drawing
+        const DEFAULT_LANE_FILL_ALPHA = 0.05; // Default translucency for un-flashed lanes
+        const LANE_BORDER_COLOR = 'rgba(255, 255, 255, 0.5)'; // Consistent border for hit zone lanes
+
+        // Map keyboard keys to lanes
+        const KEY_MAPPINGS = {
+            'a': 0, // Lane 0
+            's': 1, // Lane 1
+            'd': 2, // Lane 2
+            'f': 3  // Lane 3
+        };
+
+        // Colors for each lane (skin tones for kids)
+        const LANE_COLORS = [
+            '#ffdbac', // Light skin tone
+            '#f1c27d', // Medium-light skin tone
+            '#e0ac69', // Medium skin tone
+            '#c68642'  // Darker skin tone
+        ];
+
+        // Game state variables
+        let score = 0;
+        let notes = []; // Array to hold active notes
+        let gameRunning = false;
+        let lastNoteTime = 0;
+        let animationFrameId; // To store the requestAnimationFrame ID for stopping
+        let message = '';
+        let messageAlpha = 0;
+        let hitZoneY; // Y-coordinate of the hit zone
+        let missedNotesCount = 0;
+        let laneFlashAlphas = Array(LANE_COUNT).fill(0); // Array to store flash alpha for each lane
+
+        /**
+         * Initializes the game state and starts the game loop.
+         */
+        function initGame() {
+            score = 0;
+            notes = [];
+            gameRunning = true;
+            lastNoteTime = performance.now(); // Initialize last note spawn time
+            missedNotesCount = 0; // Reset missed notes
+            laneFlashAlphas = Array(LANE_COUNT).fill(0); // Reset all lane flashes
+
+            scoreDisplay.textContent = `Score: ${score}`;
+            missDisplay.textContent = `Sunburns: ${missedNotesCount} / ${MISS_LIMIT}`; // Update display
+            message = '';
+            messageAlpha = 0;
+            messageDisplay.style.opacity = 0;
+            startButton.textContent = 'Restart Beach Day!'; // Change button text
+            startButton.onclick = restartGame; // Change button action
+            geminiInsightButton.style.display = 'none'; // Hide insight button at start
+            
+            // Set canvas dimensions and container background
+            adjustCanvasSize();
+
+            // Calculate hit zone Y position (relative to canvas)
+            hitZoneY = canvas.height - NOTE_SIZE - 50;
+
+            // Set custom cursor
+            bodyElement.classList.add('sunblock-cursor');
+
+            // Start the game loop
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId); // Clear any existing loop
+            }
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        /**
+         * Adjusts the canvas size and updates the game container's background to match.
+         */
+        function adjustCanvasSize() {
+            const container = document.getElementById('game-container');
+            // Calculate available width for canvas, accounting for container padding
+            const availableWidth = container.clientWidth - (parseFloat(getComputedStyle(container).paddingLeft) + parseFloat(getComputedStyle(container).paddingRight));
+            
+            // Estimate available height by subtracting known fixed heights (header, score/miss, buttons)
+            // This is an approximation; a more robust solution might involve measuring actual element heights
+            const headerHeight = 60; // Approximate height of h1
+            const scoreMissHeight = 40; // Approximate height of score/miss div
+            const buttonHeight = 60; // Approximate height of one button
+            const buttonMargin = 16; // Approximate margin for one button
+            const totalFixedVerticalSpace = headerHeight + scoreMissHeight + (buttonHeight * 2) + (buttonMargin * 2) + (parseFloat(getComputedStyle(container).paddingTop) + parseFloat(getComputedStyle(container).paddingBottom));
+
+            // Calculate available height, leaving some buffer
+            const availableHeight = window.innerHeight - totalFixedVerticalSpace - 20; // 20px buffer
+
+            // Set canvas width, capping at 600px
+            canvas.width = Math.min(availableWidth, 600);
+
+            // Set canvas height, ensuring it doesn't push buttons off screen
+            // Calculate a desired height based on width (original aspect ratio)
+            const desiredHeight = canvas.width * 1.5; 
+            // Cap the canvas height based on available vertical space
+            canvas.height = Math.min(desiredHeight, availableHeight);
+
+            // Ensure a minimum height if necessary, to prevent it from becoming too small
+            canvas.height = Math.max(canvas.height, 300); // Minimum height of 300px for playability
+
+            hitZoneY = canvas.height - NOTE_SIZE - 50; // Recalculate hit zone
+
+            // Define background section Y-coordinates relative to canvas height
+            const grassToSandYCanvasRelative = hitZoneY - (NOTE_SIZE * 1.5);
+            const sandToWaterYCanvasRelative = hitZoneY + HIT_ZONE_HEIGHT + NOTE_SIZE + (NOTE_SIZE * 0.5);
+
+            // Calculate gradient stop positions relative to the *container's* total height
+            // We need to know the canvas's position within the container
+            const h1Element = document.querySelector('#game-container h1');
+            const scoreMissDiv = document.querySelector('#game-container > div.flex');
+            
+            let canvasTopOffset = parseFloat(getComputedStyle(container).paddingTop);
+            if (h1Element) {
+                canvasTopOffset += h1Element.offsetHeight + parseFloat(getComputedStyle(h1Element).marginBottom);
+            }
+            if (scoreMissDiv) {
+                canvasTopOffset += scoreMissDiv.offsetHeight + parseFloat(getComputedStyle(scoreMissDiv).marginBottom);
+            }
+
+            const grassToSandAbsolutePx = canvasTopOffset + grassToSandYCanvasRelative;
+            const sandToWaterAbsolutePx = canvasTopOffset + sandToWaterYCanvasRelative;
+
+            // Calculate total height of the game container including all its children and padding
+            let totalContainerRenderedHeight = 0;
+            for (let i = 0; i < container.children.length; i++) {
+                const child = container.children[i];
+                const computedChildStyle = getComputedStyle(child);
+                totalContainerRenderedHeight += child.offsetHeight;
+                totalContainerRenderedHeight += parseFloat(computedChildStyle.marginTop);
+                totalContainerRenderedHeight += parseFloat(computedChildStyle.marginBottom);
+            }
+            totalContainerRenderedHeight += parseFloat(getComputedStyle(container).paddingTop) + parseFloat(getComputedStyle(container).paddingBottom);
+
+
+            // Convert absolute pixel positions to percentages of the total container height
+            const grassToSandPercent = (grassToSandAbsolutePx / totalContainerRenderedHeight) * 100;
+            const sandToWaterPercent = (sandToWaterAbsolutePx / totalContainerRenderedHeight) * 100;
+
+            // Apply the linear gradient to the game container
+            gameContainer.style.backgroundImage = `linear-gradient(to bottom, 
+                #8bc34a 0%, 
+                #8bc34a ${grassToSandPercent}%, 
+                #f4a460 ${grassToSandPercent}%, 
+                #f4a460 ${sandToWaterPercent}%, 
+                #42a5f5 ${sandToWaterPercent}%, 
+                #42a5f5 100% /* Water extends to the very bottom of the container */
+            )`;
+        }
+
+        /**
+         * The main game loop, called repeatedly by requestAnimationFrame.
+         * @param {DOMHighResTimeStamp} currentTime - The current time provided by requestAnimationFrame.
+         */
+        function gameLoop(currentTime) {
+            if (!gameRunning) {
+                return; // Stop loop if game is not running
+            }
+
+            // Generate new notes
+            if (currentTime - lastNoteTime > NOTE_SPAWN_INTERVAL) {
+                generateNote();
+                lastNoteTime = currentTime;
+            }
+
+            // Update note positions and check for misses
+            updateNotes();
+
+            // Clear canvas (it's transparent, so this clears drawn elements)
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw lanes (guide lines) - now on top of the background layers
+            ctx.lineWidth = 2;
+            for (let i = 0; i < LANE_COUNT; i++) {
+                const laneX = (i + 1) * (canvas.width / LANE_COUNT);
+                ctx.strokeStyle = 'rgba(144, 238, 144, 0.5)'; // Translucent light green for lane lines
+                ctx.beginPath();
+                ctx.moveTo(laneX, 0);
+                ctx.lineTo(laneX, canvas.height);
+                ctx.stroke();
+            }
+
+            // Draw notes (kid characters)
+            notes.forEach(note => {
+                drawKidCharacter(ctx, note.x, note.y, NOTE_SIZE, note.color, note.hairColor, note.sunblocked);
+            });
+
+            // Draw individual lane hit zones (fill and border) and flash effects
+            for (let i = 0; i < LANE_COUNT; i++) {
+                const laneWidth = canvas.width / LANE_COUNT;
+                const laneXStart = i * laneWidth;
+                
+                // Determine the current fill alpha for this lane
+                // If laneFlashAlphas[i] is 0, use DEFAULT_LANE_FILL_ALPHA (translucent).
+                // Otherwise, use laneFlashAlphas[i] (which will be higher for a flash).
+                const currentFillAlpha = Math.max(DEFAULT_LANE_FILL_ALPHA, laneFlashAlphas[i]);
+                
+                // Draw the fill for this lane's hit zone
+                ctx.fillStyle = `rgba(255, 255, 255, ${currentFillAlpha})`;
+                ctx.fillRect(laneXStart, hitZoneY, laneWidth, HIT_ZONE_HEIGHT + NOTE_SIZE);
+
+                // Draw the border for this lane's hit zone
+                ctx.strokeStyle = LANE_BORDER_COLOR;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(laneXStart, hitZoneY, laneWidth, HIT_ZONE_HEIGHT + NOTE_SIZE);
+            }
+
+            // Draw hit zone markers (key representations) on the sand
+            ctx.font = '24px Inter';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            Object.keys(KEY_MAPPINGS).forEach(key => {
+                const lane = KEY_MAPPINGS[key];
+                const markerX = (lane * (canvas.width / LANE_COUNT)) + (canvas.width / LANE_COUNT / 2);
+                const markerY = hitZoneY + (HIT_ZONE_HEIGHT + NOTE_SIZE) / 2;
+                ctx.fillStyle = '#333'; // Dark text on sand
+                ctx.fillText(key.toUpperCase(), markerX, markerY);
+            });
+
+            // Update hit zone flash opacity for each lane
+            for (let i = 0; i < LANE_COUNT; i++) {
+                if (laneFlashAlphas[i] > 0) {
+                    laneFlashAlphas[i] -= HIT_ZONE_FLASH_FADE_SPEED;
+                    if (laneFlashAlphas[i] < 0) laneFlashAlphas[i] = 0; // Clamp to 0
+                }
+            }
+
+            // Request next frame
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        /**
+         * Generates a new note and adds it to the 'notes' array.
+         */
+        function generateNote() {
+            const lane = Math.floor(Math.random() * LANE_COUNT);
+            const x = (lane * (canvas.width / LANE_COUNT)) + (canvas.width / LANE_COUNT / 2) - (NOTE_SIZE / 2);
+            const y = -NOTE_SIZE; // Start above the canvas
+            const color = LANE_COLORS[lane]; // Skin color
+            const hairColor = ['#a0522d', '#daa520', '#d2b48c', '#8b4513'][Math.floor(Math.random() * 4)]; // Random hair color
+
+            notes.push({ x, y, lane, color, hairColor, hit: false, sunblocked: false }); // Added sunblocked state
+        }
+
+        /**
+         * Updates the position of each note and handles notes that pass the hit zone.
+         */
+        function updateNotes() {
+            for (let i = 0; i < notes.length; i++) {
+                const note = notes[i];
+                note.y += NOTE_SPEED;
+
+                // If note passes the hit zone without being hit
+                if (note.y > hitZoneY + NOTE_SIZE && !note.hit) {
+                    displayMessage('Sunburn!', '#ff6b6b'); // Red for miss
+                    missedNotesCount++; // Increment miss count
+                    missDisplay.textContent = `Sunburns: ${missedNotesCount} / ${MISS_LIMIT}`; // Update display
+
+                    if (missedNotesCount >= MISS_LIMIT) {
+                        gameOver(); // Game over if miss limit reached
+                        return; // Stop processing notes if game is over
+                    }
+
+                    notes.splice(i, 1); // Remove the missed note
+                    i--; // Adjust index after removal
+                }
+            }
+        }
+
+        /**
+         * Draws a cartoon kid character.
+         * @param {CanvasRenderingContext2D} ctx - The canvas rendering context.
+         * @param {number} x - X-coordinate for the top-left corner of the character bounding box.
+         * @param {number} y - Y-coordinate for the top-left corner of the character bounding box.
+         * @param {number} size - Overall size of the character (height/width).
+         * @param {string} skinColor - Color of the skin.
+         * @param {string} hairColor - Color of the hair.
+         * @param {boolean} isSunblocked - Whether to draw sunblock on the face.
+         */
+        function drawKidCharacter(ctx, x, y, size, skinColor, hairColor, isSunblocked) {
+            const headRadius = size * 0.3;
+            const headCenterX = x + size / 2;
+            const headCenterY = y + headRadius; // Head is at the top of the bounding box
+
+            // Draw Head
+            ctx.beginPath();
+            ctx.arc(headCenterX, headCenterY, headRadius, 0, Math.PI * 2);
+            ctx.fillStyle = skinColor;
+            ctx.fill();
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Draw Hair (simple top part)
+            ctx.beginPath();
+            ctx.arc(headCenterX, headCenterY - headRadius * 0.2, headRadius * 0.9, Math.PI, 0, false);
+            ctx.lineTo(headCenterX + headRadius * 0.9, headCenterY - headRadius * 0.2);
+            ctx.fillStyle = hairColor;
+            ctx.fill();
+
+            // Draw Eyes
+            const eyeRadius = headRadius * 0.1;
+            const eyeOffsetY = headRadius * 0.2;
+            const eyeOffsetX = headRadius * 0.3;
+            ctx.fillStyle = '#333';
+            ctx.beginPath();
+            ctx.arc(headCenterX - eyeOffsetX, headCenterY - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(headCenterX + eyeOffsetX, headCenterY - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw Mouth
+            const mouthRadius = headRadius * 0.2;
+            const mouthOffsetY = headRadius * 0.3;
+            ctx.beginPath();
+            ctx.arc(headCenterX, headCenterY + mouthOffsetY, mouthRadius, 0, Math.PI, false); // Smiling mouth
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Draw Body (small, simple rectangle)
+            const bodyWidth = size * 0.6;
+            const bodyHeight = size * 0.4; // Small body
+            const bodyX = x + (size - bodyWidth) / 2;
+            const bodyY = headCenterY + headRadius - 5; // Connects to head slightly
+            ctx.fillStyle = '#ff6347'; // Tomato red shirt
+            ctx.fillRect(bodyX, bodyY, bodyWidth, bodyHeight);
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(bodyX, bodyY, bodyWidth, bodyHeight);
+
+            // Draw Legs (very small rectangles)
+            const legWidth = bodyWidth * 0.4;
+            const legHeight = size * 0.2;
+            const legY = bodyY + bodyHeight;
+            ctx.fillStyle = '#4682b4'; // Steel blue shorts
+            ctx.fillRect(bodyX + bodyWidth * 0.05, legY, legWidth, legHeight); // Left leg
+            ctx.fillRect(bodyX + bodyWidth - legWidth - bodyWidth * 0.05, legY, legWidth, legHeight); // Right leg
+
+            // Draw sunblock if hit
+            if (isSunblocked) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'; // White, semi-transparent
+                // A few random-ish patches on the face
+                ctx.beginPath();
+                ctx.arc(headCenterX - headRadius * 0.2, headCenterY - headRadius * 0.1, headRadius * 0.15, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(headCenterX + headRadius * 0.1, headCenterY + headRadius * 0.1, headRadius * 0.1, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(headCenterX, headCenterY - headRadius * 0.3, headRadius * 0.12, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        /**
+         * Unified function to handle a hit attempt for a given lane.
+         * This is called by both keyboard and mouse events.
+         * @param {number} lanePressed - The index of the lane where the hit attempt occurred.
+         */
+        function handleHitAttempt(lanePressed) {
+            if (!gameRunning) return;
+
+            laneFlashAlphas[lanePressed] = 1; // Trigger flash for the specific lane
+            let hitDetected = false;
+            let perfectHit = false;
+
+            const hitZoneCenterY = hitZoneY + (HIT_ZONE_HEIGHT + NOTE_SIZE) / 2;
+
+            // Iterate through notes to find a hit
+            for (let i = 0; i < notes.length; i++) {
+                const note = notes[i];
+                // Check if note is in the correct lane and within the hit zone
+                if (note.lane === lanePressed &&
+                    note.y + NOTE_SIZE > hitZoneY &&
+                    note.y < hitZoneY + HIT_ZONE_HEIGHT + NOTE_SIZE &&
+                    !note.hit) // Ensure note hasn't been hit already
+                {
+                    // Check for perfect hit
+                    const noteCenterY = note.y + NOTE_SIZE / 2;
+                    if (Math.abs(noteCenterY - hitZoneCenterY) <= PERFECT_HIT_TOLERANCE) {
+                        perfectHit = true;
+                    }
+
+                    score += perfectHit ? 20 : 10; // Perfect hit gives more score
+                    scoreDisplay.textContent = `Score: ${score}`;
+                    displayMessage(perfectHit ? 'Perfect Sunblock!' : 'Sunblocked!', perfectHit ? '#60a5fa' : '#48bb78'); // Blue for perfect, Green for normal hit
+                    note.hit = true; // Mark as hit
+                    note.sunblocked = true; // Mark kid as sunblocked
+                    notes.splice(i, 1); // Remove the hit note
+                    hitDetected = true;
+                    break; // Only hit one note per key press/click
+                }
+            }
+
+            if (!hitDetected) {
+                // If a key/click was made but no note was in the hit zone
+                displayMessage('Sunburn!', '#ff6b6b'); // Red for miss
+                missedNotesCount++; // Increment miss count
+                missDisplay.textContent = `Sunburns: ${missedNotesCount} / ${MISS_LIMIT}`; // Update display
+
+                if (missedNotesCount >= MISS_LIMIT) {
+                    gameOver(); // Game over if miss limit reached
+                }
+            }
+        }
+
+        /**
+         * Handles keyboard key presses.
+         * @param {KeyboardEvent} event - The keyboard event object.
+         */
+        function handleKeyPress(event) {
+            const pressedKey = event.key.toLowerCase();
+            const lanePressed = KEY_MAPPINGS[pressedKey];
+            if (lanePressed !== undefined) {
+                handleHitAttempt(lanePressed);
+            }
+        }
+
+        /**
+         * Handles mouse clicks on the canvas.
+         * @param {MouseEvent} event - The mouse event object.
+         */
+        function handleMouseClick(event) {
+            if (!gameRunning) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = event.clientX - rect.left; // X position relative to canvas
+
+            // Determine which lane was clicked
+            const laneWidth = canvas.width / LANE_COUNT;
+            const laneClicked = Math.floor(mouseX / laneWidth);
+
+            // Check if the click was within the hit zone vertically
+            const mouseY = event.clientY - rect.top;
+            if (mouseY > hitZoneY && mouseY < hitZoneY + HIT_ZONE_HEIGHT + NOTE_SIZE) {
+                if (laneClicked >= 0 && laneClicked < LANE_COUNT) {
+                    handleHitAttempt(laneClicked);
+                }
+            }
+        }
+
+        /**
+         * Displays a temporary message on the screen.
+         * @param {string} text - The message to display.
+         * @param {string} color - The color of the message.
+         */
+        function displayMessage(text, color) {
+            message = text;
+            messageDisplay.textContent = message;
+            messageDisplay.style.color = color;
+            messageAlpha = 1; // Start fully opaque
+            messageDisplay.style.opacity = messageAlpha;
+        }
+
+        /**
+         * Handles the game over state.
+         */
+        function gameOver() {
+            gameRunning = false;
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            displayMessage('Beach Day Over!', '#ff6b6b'); // Sunburn red for game over
+            startButton.textContent = 'Play Again?'; // Change button text for restart
+            startButton.onclick = restartGame; // Ensure restart function is set
+            geminiInsightButton.style.display = 'block'; // Show insight button
+            bodyElement.classList.remove('sunblock-cursor'); // Revert cursor
+        }
+
+        /**
+         * Stops the game and resets for a new game.
+         */
+        function restartGame() {
+            initGame(); // Re-initialize to start fresh
+        }
+
+        /**
+         * Fetches a game over insight message from the Gemini API.
+         */
+        async function getGameOverInsight() {
+            displayMessage('Generating Beach Report...', '#63b3ed'); // Blue for loading
+            geminiInsightButton.disabled = true; // Disable button during generation
+
+            const prompt = `The player just finished a "Sunblock Hero" game. Their final score was ${score} and they let ${missedNotesCount} kids get sunburned out of a maximum of ${MISS_LIMIT} allowed sunburns. Provide a short, encouraging, or slightly humorous message about their sunblocking performance. Keep it concise, under 25 words. Make it sound like a beach report.`;
+
+            let chatHistory = [];
+            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+            const payload = { contents: chatHistory };
+            const apiKey = ""; // Leave this as-is; Canvas will provide the key
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    displayMessage(text, '#a78bfa'); // Purple for insight
+                } else {
+                    displayMessage('Could not generate beach report. Try again!', '#ff6b6b');
+                }
+            } catch (error) {
+                console.error('Error fetching Gemini insight:', error);
+                displayMessage('Error getting beach report. Check console.', '#ff6b6b');
+            } finally {
+                geminiInsightButton.disabled = false; // Re-enable button
+            }
+        }
+
+        // Event Listeners
+        window.addEventListener('keydown', handleKeyPress);
+        canvas.addEventListener('mousedown', handleMouseClick);
+        startButton.addEventListener('click', initGame);
+        geminiInsightButton.addEventListener('click', getGameOverInsight);
+        window.addEventListener('resize', adjustCanvasSize);
+
+        // Initial canvas size adjustment when the page loads
+        window.onload = function() {
+            adjustCanvasSize();
+        };
+
+    </script>
+</body>
+</html>
